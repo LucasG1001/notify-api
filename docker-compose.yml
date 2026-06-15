@@ -1,3 +1,7 @@
+# Stack da Notify API.
+# O "name" isola este projeto (volumes/redes/containers ficam prefixados).
+name: notify-api
+
 services:
   db:
     image: postgres:16-alpine
@@ -7,19 +11,53 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-notify_api}
     volumes:
       - notify_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-notify} -d ${POSTGRES_DB:-notify_api}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   api:
     build: .
+    # Nome DNS estável: dentro de cada rede de projeto os consumidores
+    # chamam http://notify-api:3334
+    container_name: notify-api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-notify}:${POSTGRES_PASSWORD:-notify}@db:5432/${POSTGRES_DB:-notify_api}
       PORT: 3334
       ADMIN_API_KEY: ${ADMIN_API_KEY:-troque-esta-chave-admin}
     ports:
-      - "${API_PORT:-3334}:3334"
+      # Apenas loopback do host (administração via SSH na VPS: criar projetos/canais).
+      # O tráfego runtime (consumidores -> notify) usa as redes de projeto, não esta porta.
+      - "127.0.0.1:${API_PORT:-3334}:3334"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    # A notify-api ENTRA na rede de cada projeto consumidor.
+    # O "db" acima fica só na rede default (interna), fora do alcance dos consumidores.
+    networks:
+      - default
+      - media-net
+      - remindme-net
+      - grana-net
     restart: unless-stopped
 
 volumes:
   notify_db_data:
+
+networks:
+  # Redes pertencentes a cada projeto consumidor. Crie-as uma vez na VPS:
+  #   docker network create media-net
+  #   docker network create remindme-net
+  # A remindme-net já fica pré-provisionada para o futuro projeto remindMe.
+  media-net:
+    external: true
+  remindme-net:
+    external: true
+  grana-net:
+    external: true
