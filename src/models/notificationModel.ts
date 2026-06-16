@@ -10,13 +10,12 @@ function toNotification(row: NotificationRow): Notification {
   return {
     id: row.id,
     projectId: row.project_id,
-    channelId: row.channel_id,
     type: row.type,
     payload: row.payload,
     status: row.status,
     attempts: row.attempts,
     error: row.error,
-    discordMessageId: row.discord_message_id,
+    telegramMessageId: row.telegram_message_id,
     sentAt: row.sent_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -25,22 +24,22 @@ function toNotification(row: NotificationRow): Notification {
 
 export async function create(entry: CreateNotification): Promise<Notification> {
   const result = await pool.query<NotificationRow>(
-    `INSERT INTO notifications (project_id, channel_id, type, payload, status)
-     VALUES ($1, $2, $3, $4, 'pending')
+    `INSERT INTO notifications (project_id, type, payload, status)
+     VALUES ($1, $2, $3, 'pending')
      RETURNING *`,
-    [entry.projectId, entry.channelId, entry.type, JSON.stringify(entry.payload)]
+    [entry.projectId, entry.type, JSON.stringify(entry.payload)]
   );
   return toNotification(result.rows[0]);
 }
 
-export async function markSent(id: string, discordMessageId: string | null): Promise<Notification | null> {
+export async function markSent(id: string, telegramMessageId: string | null): Promise<Notification | null> {
   const result = await pool.query<NotificationRow>(
     `UPDATE notifications
        SET status = 'sent', attempts = attempts + 1, error = NULL,
-           discord_message_id = $2, sent_at = NOW(), updated_at = NOW()
+           telegram_message_id = $2, sent_at = NOW(), updated_at = NOW()
      WHERE id = $1
      RETURNING *`,
-    [id, discordMessageId]
+    [id, telegramMessageId]
   );
   return result.rows[0] ? toNotification(result.rows[0]) : null;
 }
@@ -68,10 +67,6 @@ export async function findAllByProject(projectId: string, filters: NotificationF
   if (filters.type !== undefined) {
     conditions.push(`type = $${paramIndex++}`);
     values.push(filters.type);
-  }
-  if (filters.channelId !== undefined) {
-    conditions.push(`channel_id = $${paramIndex++}`);
-    values.push(filters.channelId);
   }
 
   const limit = filters.limit ?? 50;

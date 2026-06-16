@@ -1,46 +1,26 @@
 import type { Request, Response } from "express";
 import { sendNotificationSchema } from "../schemas/notification.js";
-import * as channelModel from "../models/channelModel.js";
 import * as notificationModel from "../models/notificationModel.js";
-import { sendToWebhook } from "../services/discordService.js";
-import type { Channel } from "../types/channel.js";
+import { sendTelegram } from "../services/telegramService.js";
 import type {
-  DiscordPayload,
   Notification,
   NotificationFilters,
+  NotificationPayload,
   NotificationStatus,
-  SendNotificationInput,
 } from "../types/notification.js";
+import type { Project } from "../types/project.js";
 
-function buildPayload(channel: Channel, input: SendNotificationInput): DiscordPayload {
-  const payload: DiscordPayload = {};
-
-  if (input.content !== undefined) payload.content = input.content;
-
-  if (input.embeds !== undefined && input.embeds.length > 0) {
-    payload.embeds = input.embeds.map((embed) =>
-      embed.color === undefined && channel.defaultColor !== null
-        ? { ...embed, color: channel.defaultColor }
-        : embed
-    );
-  }
-
-  const username = input.username ?? channel.defaultUsername;
-  if (username !== null && username !== undefined) payload.username = username;
-
-  const avatarUrl = input.avatarUrl ?? channel.defaultAvatarUrl;
-  if (avatarUrl !== null && avatarUrl !== undefined) payload.avatar_url = avatarUrl;
-
-  return payload;
-}
-
-async function deliver(notification: Notification, webhookUrl: string): Promise<Notification> {
+async function deliver(notification: Notification, project: Project): Promise<Notification> {
   try {
-    const { discordMessageId } = await sendToWebhook(webhookUrl, notification.payload);
-    const updated = await notificationModel.markSent(notification.id, discordMessageId);
+    const { telegramMessageId } = await sendTelegram(
+      project.telegramBotToken,
+      project.telegramChatId,
+      notification.payload
+    );
+    const updated = await notificationModel.markSent(notification.id, telegramMessageId);
     return updated ?? notification;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha ao enviar para o Discord.";
+    const message = error instanceof Error ? error.message : "Falha ao enviar para o Telegram.";
     const updated = await notificationModel.markFailed(notification.id, message);
     return updated ?? notification;
   }
@@ -53,27 +33,21 @@ export async function send(req: Request, res: Response): Promise<void> {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." });
       return;
     }
-    const input = parsed.data;
-    const projectId = req.project!.id;
-
-    const channel = input.channelId
-      ? await channelModel.findByIdForProject(input.channelId, projectId)
-      : await channelModel.findByTypeForProject(input.type!, projectId);
-
-    if (!channel) {
-      res.status(404).json({ error: "Canal não encontrado." });
+    const project = req.project!;
+    if (!project.telegramBotToken || !project.telegramChatId) {
+      res.status(409).json({ error: "Projeto sem token do bot ou chat_id do Telegram configurado." });
       return;
     }
 
-    const payload = buildPayload(channel, input);
+    const { type, ...payload } = parsed.data;
+
     const created = await notificationModel.create({
-      projectId,
-      channelId: channel.id,
-      type: channel.type,
-      payload,
+      projectId: project.id,
+      type: type ?? null,
+      payload: payload as NotificationPayload,
     });
 
-    const result = await deliver(created, channel.webhookUrl);
+    const result = await deliver(created, project);
     res.status(201).json(result);
   } catch {
     res.status(500).json({ error: "Erro ao enviar notificação." });
@@ -86,7 +60,6 @@ export async function getAll(req: Request, res: Response): Promise<void> {
     const status = req.query.status as string | undefined;
     if (status) filters.status = status as NotificationStatus;
     if (req.query.type) filters.type = String(req.query.type);
-    if (req.query.channelId) filters.channelId = String(req.query.channelId);
     const limit = parseInt(String(req.query.limit ?? ""), 10);
     if (!Number.isNaN(limit)) filters.limit = Math.min(Math.max(limit, 1), 200);
 
@@ -112,8 +85,8 @@ export async function getById(req: Request, res: Response): Promise<void> {
 
 export async function retry(req: Request, res: Response): Promise<void> {
   try {
-    const projectId = req.project!.id;
-    const notification = await notificationModel.findByIdForProject(String(req.params.id), projectId);
+    const project = req.project!;
+    const notification = await notificationModel.findByIdForProject(String(req.params.id), project.id);
     if (!notification) {
       res.status(404).json({ error: "Notificação não encontrada." });
       return;
@@ -122,16 +95,7 @@ export async function retry(req: Request, res: Response): Promise<void> {
       res.status(409).json({ error: "Notificação já foi enviada." });
       return;
     }
-    if (!notification.channelId) {
-      res.status(409).json({ error: "Canal da notificação não existe mais." });
-      return;
-    }
-    const channel = await channelModel.findByIdForProject(notification.channelId, projectId);
-    if (!channel) {
-      res.status(409).json({ error: "Canal da notificação não existe mais." });
-      return;
-    }
-    const result = await deliver(notification, channel.webhookUrl);
+    const result = await deliver(notification, project);
     res.json(result);
   } catch {
     res.status(500).json({ error: "Erro ao reenviar notificação." });

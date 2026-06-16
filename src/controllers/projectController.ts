@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { projectCreateSchema } from "../schemas/project.js";
+import { projectCreateSchema, projectUpdateSchema } from "../schemas/project.js";
 import * as projectModel from "../models/projectModel.js";
 
 export async function getAll(_req: Request, res: Response): Promise<void> {
@@ -15,13 +15,31 @@ export async function create(req: Request, res: Response): Promise<void> {
   try {
     const parsed = projectCreateSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Dados inválidos." });
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." });
       return;
     }
-    const project = await projectModel.create(parsed.data.name);
+    const project = await projectModel.create(parsed.data);
     res.status(201).json(project);
   } catch {
     res.status(500).json({ error: "Erro ao criar projeto." });
+  }
+}
+
+export async function update(req: Request, res: Response): Promise<void> {
+  try {
+    const parsed = projectUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Dados inválidos." });
+      return;
+    }
+    const project = await projectModel.update(String(req.params.id), parsed.data);
+    if (!project) {
+      res.status(404).json({ error: "Projeto não encontrado." });
+      return;
+    }
+    res.json(project);
+  } catch {
+    res.status(500).json({ error: "Erro ao atualizar projeto." });
   }
 }
 

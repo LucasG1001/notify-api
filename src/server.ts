@@ -5,7 +5,6 @@ import express from "express";
 import cors from "cors";
 import { migrate } from "./database/migrate.js";
 import { projectRoutes } from "./routes/projectRoutes.js";
-import { channelRoutes } from "./routes/channelRoutes.js";
 import { notificationRoutes } from "./routes/notificationRoutes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
 
@@ -20,7 +19,6 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/projects", projectRoutes);
-app.use("/api/channels", channelRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 app.use(notFoundHandler);
