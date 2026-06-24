@@ -15,16 +15,38 @@ function toProject(row: ProjectRow): Project {
     name: row.name,
     telegramBotToken: row.telegram_bot_token,
     telegramChatId: row.telegram_chat_id,
+    callbackUrl: row.callback_url,
+    callbackSecret: row.callback_secret,
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-/** Remove o token do bot — usado em respostas/listagens públicas. */
+/** Remove dados sensíveis (token/segredo) — usado em respostas/listagens públicas. */
 export function toPublic(project: Project): PublicProject {
-  const { telegramBotToken: _omit, ...rest } = project;
+  const { telegramBotToken: _token, callbackSecret: _secret, ...rest } = project;
   return rest;
+}
+
+/** Projetos ativos com bot token — usado pelo poller para abrir os loops de getUpdates. */
+export async function findActiveWithToken(): Promise<Project[]> {
+  const result = await pool.query<ProjectRow>(
+    "SELECT * FROM projects WHERE is_active = true AND telegram_bot_token <> ''"
+  );
+  return result.rows.map(toProject);
+}
+
+/** Resolve o projeto dono de um callback pelo par (token do bot, chat_id). */
+export async function findActiveByTokenAndChat(
+  botToken: string,
+  chatId: string
+): Promise<Project | null> {
+  const result = await pool.query<ProjectRow>(
+    "SELECT * FROM projects WHERE telegram_bot_token = $1 AND telegram_chat_id = $2 AND is_active = true LIMIT 1",
+    [botToken, chatId]
+  );
+  return result.rows[0] ? toProject(result.rows[0]) : null;
 }
 
 export async function findAll(): Promise<PublicProject[]> {
@@ -48,10 +70,17 @@ export async function findActiveByKeyHash(keyHash: string): Promise<Project | nu
 export async function create(data: CreateProject): Promise<ProjectWithKey> {
   const apiKey = generateApiKey();
   const result = await pool.query<ProjectRow>(
-    `INSERT INTO projects (name, api_key_hash, telegram_bot_token, telegram_chat_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO projects (name, api_key_hash, telegram_bot_token, telegram_chat_id, callback_url, callback_secret)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [data.name, hashApiKey(apiKey), data.telegramBotToken, data.telegramChatId]
+    [
+      data.name,
+      hashApiKey(apiKey),
+      data.telegramBotToken,
+      data.telegramChatId,
+      data.callbackUrl ?? null,
+      data.callbackSecret ?? null,
+    ]
   );
   return { ...toProject(result.rows[0]), apiKey };
 }
@@ -72,6 +101,14 @@ export async function update(id: string, data: UpdateProject): Promise<PublicPro
   if (data.telegramChatId !== undefined) {
     sets.push(`telegram_chat_id = $${i++}`);
     values.push(data.telegramChatId);
+  }
+  if (data.callbackUrl !== undefined) {
+    sets.push(`callback_url = $${i++}`);
+    values.push(data.callbackUrl);
+  }
+  if (data.callbackSecret !== undefined) {
+    sets.push(`callback_secret = $${i++}`);
+    values.push(data.callbackSecret);
   }
   if (data.isActive !== undefined) {
     sets.push(`is_active = $${i++}`);

@@ -7,6 +7,7 @@ import { migrate } from "./database/migrate.js";
 import { projectRoutes } from "./routes/projectRoutes.js";
 import { notificationRoutes } from "./routes/notificationRoutes.js";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler.js";
+import { startTelegramPoller } from "./services/telegramPoller.js";
 
 const app = express();
 const PORT = process.env.PORT || 3334;
@@ -29,6 +30,7 @@ async function start(): Promise<void> {
   app.listen(PORT, () => {
     process.stdout.write(`Notify API rodando em http://localhost:${PORT}\n`);
   });
+  startTelegramPoller();
 }
 
 start();

@@ -6,10 +6,15 @@ const field = z.object({
   inline: z.boolean().optional(),
 });
 
-const button = z.object({
-  text: z.string().min(1).max(64),
-  url: z.string().url(),
-});
+const button = z
+  .object({
+    text: z.string().min(1).max(64),
+    url: z.string().url().optional(),
+    callbackData: z.string().min(1).max(64).optional(),
+  })
+  .refine((b) => Boolean(b.url) !== Boolean(b.callbackData), {
+    message: "Cada botão deve ter url ou callbackData (exatamente um).",
+  });
 
 export const sendNotificationSchema = z
   .object({

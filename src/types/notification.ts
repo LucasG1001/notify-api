@@ -6,9 +6,14 @@ export interface NotificationField {
   inline?: boolean;
 }
 
+/**
+ * Botão inline do Telegram. Tem `url` (abre um link) OU `callbackData`
+ * (dispara um callback_query recebido pelo poller) — exatamente um dos dois.
+ */
 export interface NotificationButton {
   text: string;
-  url: string;
+  url?: string;
+  callbackData?: string;
 }
 
 /**

@@ -22,6 +22,23 @@ export async function migrate(): Promise<void> {
     ALTER TABLE projects ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT NOT NULL DEFAULT '';
   `);
 
+  // Repasse de callback_query (cliques em botão) para o projeto consumidor.
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS callback_url TEXT;
+  `);
+  await pool.query(`
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS callback_secret TEXT;
+  `);
+
+  // Offset do getUpdates por bot, para o long-polling sobreviver a restart.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS telegram_poll_state (
+      bot_token     TEXT PRIMARY KEY,
+      offset_value  BIGINT NOT NULL DEFAULT 0,
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),

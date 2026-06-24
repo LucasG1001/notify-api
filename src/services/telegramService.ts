@@ -12,7 +12,8 @@ interface TelegramResponse {
 
 interface InlineButton {
   text: string;
-  url: string;
+  url?: string;
+  callback_data?: string;
 }
 
 /** Escapa os caracteres reservados do parse_mode HTML do Telegram. */
@@ -49,7 +50,11 @@ function buildReplyMarkup(payload: NotificationPayload): { inline_keyboard: Inli
   if (!payload.buttons || payload.buttons.length === 0) return undefined;
   const rows: InlineButton[][] = [];
   for (let i = 0; i < payload.buttons.length; i += 2) {
-    rows.push(payload.buttons.slice(i, i + 2).map((b) => ({ text: b.text, url: b.url })));
+    rows.push(
+      payload.buttons.slice(i, i + 2).map((b) =>
+        b.callbackData ? { text: b.text, callback_data: b.callbackData } : { text: b.text, url: b.url }
+      )
+    );
   }
   return { inline_keyboard: rows };
 }
@@ -96,4 +101,24 @@ export async function sendTelegram(
 
   const messageId = data.result?.message_id;
   return { telegramMessageId: messageId !== undefined ? String(messageId) : null };
+}
+
+/**
+ * Responde a um callback_query (clique em botão). O texto vira um toast no
+ * app do Telegram. Sem isso o cliente fica com o botão "carregando".
+ */
+export async function answerCallbackQuery(
+  botToken: string,
+  callbackQueryId: string,
+  text?: string
+): Promise<void> {
+  const api = `https://api.telegram.org/bot${botToken}`;
+  await httpRequest<TelegramResponse>({
+    method: "post",
+    url: `${api}/answerCallbackQuery`,
+    data: {
+      callback_query_id: callbackQueryId,
+      text: text ? truncate(text, 200) : undefined,
+    },
+  });
 }
